@@ -1,0 +1,238 @@
+---
+title: 'STA304'
+author: "Neil Montgomery"
+date: "2016-02-22"
+output: 
+  ioslides_presentation: 
+    css: 'styles.css' 
+    widescreen: true 
+    transition: 0.001
+---
+\newcommand{\E}[1]{E{\left(#1\right)}}
+\newcommand{\flist}[2]{\{#1_1, #1_2, \ldots, #1_#2\}}
+\newcommand{\fulist}[3]{\{#1_{{#2}1}, #1_{{#2}2}, \ldots, #1_{{#2}{#3}}\}}
+\renewcommand{\bar}[1]{\overline{#1}}
+\newcommand{\SE}[1]{\sqrt{\hat{V}(#1)}}
+
+## recap of example from 2016-02-22
+
+```{r, echo=FALSE, message=FALSE}
+library(rio)
+library(dplyr)
+tx <- import("tx.csv")
+N <- nrow(tx)
+n <- 600
+library(knitr)
+tx %>% 
+  group_by(Size) %>% 
+  summarise(N=n(), W = n()/nrow(tx)) -> N_by_size
+set.seed(1)
+tx_srs <- sample_n(tx, 600)
+
+tx_srs %>% 
+  summarize(mean = mean(Age), sd = sd(Age), 
+            B = 2*sqrt(var(Age)/n*(N-n)/N)) -> tx_srs_est
+
+set.seed(2)
+tx %>% 
+  group_by(Size) %>% 
+  sample_frac(n/N) -> tx_bySize
+
+tx_bySize %>% 
+  group_by(Size) %>% 
+  summarise(n = n(), means = mean(Age), variances = var(Age), sds = sd(Age)) -> strat_summ
+```
+
+The SRS estimate is $\bar y = `r tx_srs_est$mean`$ with error bound $B_\text{SRS} = `r tx_srs_est$B`$.
+
+The stratified estimates are:
+
+$$\bar y_{st} = `r sum(strat_summ$means * N_by_size$W)`$$
+$$\hat V(\bar y_{st}) = `r sum(strat_summ$variances/strat_summ$n * (N_by_size$N - strat_summ$n)/N_by_size$N * N_by_size$W^2)`$$
+
+with bound $B_\text{st} =  2\sqrt{\hat V(\bar y_{st})} = `r 2*sqrt(sum(strat_summ$variances/strat_summ$n * (N_by_size$N - strat_summ$n)/N_by_size$N * N_by_size$W^2))`$.
+
+## comparing the bounds I - homogeneity
+
+The stratified bound was *larger* than the SRS bound. What happened? There were two things that we will examine in a little more detail. 
+
+First, let's look at density plots of the Age variable from the elements in the simple random sample. The thick line is for the whole sample and the coloured filled densities are for the sub-samples.
+
+<div class="columns-2">
+```{r, echo=FALSE, fig.height=3.5, fig.width=5}
+library(ggplot2)
+tx_srs %>% 
+  ggplot(aes(x=Age)) +
+  geom_density(size=1.5) + 
+  geom_density(aes(x=Age, fill=factor(Size)), alpha=0.25) +
+  scale_fill_discrete(name="Size")
+```
+
+&nbsp;
+
+The strata all look very similar to each other and to the population. The strata were not homogeneous with respect to the `Age` variable so stratification on `Size` was not useful (for getting better estimates.)
+</div>
+
+## comparing the bounds II - random variation { .build }
+
+Second, keep in mind that the bounds are based on *estimates* of the population variance $\sigma^2$ and the stratum variances $\sigma^2_i$ based on randomly selected items. The estimates will of course be higher or lower than the true values just by random chance.
+
+Let's look at a table of both the estimated and (in practice un-knowable) true variances:
+
+```{r, echo=FALSE}
+tx %>% 
+  summarize(Size = NA, N = n(), "Mean" = mean(Age), 
+            "Variance" = var(Age), 
+            "SD" = sd(Age)) -> pop
+
+tx %>% 
+  group_by(Size) %>% 
+  summarize(N = n(), "Mean" = mean(Age), 
+            "Variance" = var(Age), 
+            "SD" = sd(Age)) -> true_strat
+
+strat <- left_join(rbind(pop, true_strat), strat_summ, by="Size")
+strat$Size[1] <- "All (population)"
+names(strat)[7:9] <- c("Sample Mean", "Sample Variance", "Sample SD")
+```
+
+|Size             |     N| Mean| Variance|   SD|   n| Sample Mean| Sample Var|  Sample SD|
+|:----------------|-----:|----:|--------:|----:|---:|-----:|---------:|----:|
+|All (population) | 26019| 27.3|    308.7| 17.6|    |      |          |     |
+|50               |  9882| 31.2|    327.0| 18.1| 228|  32.9|     364.4| 19.1|
+|75               |  9405| 26.7|    290.2| 17.0| 217|  27.5|     320.7| 17.9|
+|100              |  6732| 22.6|    263.3| 16.2| 155|  21.6|     174.9| 13.2|
+
+## another example "fittings" { .build }
+
+The data have been adapted from a study I did with a gas distribution company. They were concerned with properties of a certain old type of *fitting*, whose age might be associated with failure, leak, and safety risk.
+
+The company's "territory" covers at least the GTA, Ottawa, and other areas. Some areas might have an older population of this fitting than others.
+
+The company wishes to estimate the overall average age of the fittings, and also the average ages within each area.
+
+To determine the age of a fitting they may need to check a paper record, as the ages are not all in the database.
+
+## fittings population summary
+
+
+```{r, echo=FALSE}
+fittings <- import("fittings.csv")
+N_pop <- nrow(fittings)
+fittings %>% 
+  group_by(Municipality) %>% 
+  summarize(N = n(), W = n()/N_pop) -> by_mun
+kable(by_mun)
+n <- 1000
+```
+
+The population size is `r N_pop`.
+
+We'll use an overall sample of size `r n`, allocated proportionally to the strata.
+
+```{r, echo=FALSE}
+set.seed(500)
+fittings %>% 
+  group_by(Municipality) %>% 
+  sample_frac(n/N_pop) -> fittings_by_mun
+```
+
+## summaries of the stratified sample
+
+<div class="columns-2">
+```{r, echo=FALSE, fig.height=3.5, fig.width=5}
+fittings_by_mun %>% 
+  ggplot(aes(x=Age, fill=Municipality)) +
+  geom_density(alpha=0.2)
+```
+
+&nbsp;
+
+```{r, echo=FALSE}
+fittings_by_mun %>% 
+  group_by(Municipality) %>% 
+  summarize(n=n(), mean=mean(Age), sd = sd(Age)) -> fittings_by_mun_summ
+kable(fittings_by_mun_summ)
+```
+
+
+</div>
+
+
+## stratified estimates of average age
+
+```{r, echo=FALSE}
+fittings_by_mun %>% 
+  group_by(Municipality) %>% 
+  summarise(n=n(), mean=mean(Age), var=var(Age)) %>% 
+  left_join(., by_mun, "Municipality") %>% 
+  mutate(W_mean = mean*W, W_varhat = W^2*var/n*(N_pop-n)/N_pop) -> f_st
+B_st <- 2*sqrt(sum(f_st$var / f_st$n * (1 - f_st$n/f_st$N) * f_st$W^2))
+```
+
+Note: one goal has been acheived, which was to get estimates for each municipality. Use tables on previous two slides and the usual SRS theory to obtain CI and/or error bounds.
+
+Estimate of population average age is: 
+$$\overline y_{st} = `r sum(fittings_by_mun_summ$mean * by_mun$W)`$$
+
+with error bound:
+
+$$B_{st} = `r B_st`$$
+
+## compared with SRS of same size { .build }
+
+```{r, echo=FALSE}
+fittings %>% sample_n(999) %>% summarize(mean=mean(Age), sd(Age), B =2*sd(Age)/sqrt(999)*(1-999/N_pop)) -> f_srs
+```
+
+The overall sample size was (due to rounding) $999$. A simple random sample of the same size gives:
+
+$$\overline y_{SRS} = `r f_srs$mean`$$
+
+and
+
+$$B_{SRS} = `r f_srs$B`$$
+
+The stratified estimate had a lower bound on the error of estimation. There is the notion of "relative efficiency" of estimators, which is simply the ratio of their variances (see 6.8 of the text). In this case we might estimate the relative efficiency with 
+
+$$ \frac{B_{SRS}^2}{B^2_{st}} = `r f_srs$B^2/B_st^2`$$.
+
+## sample size and allocation (for population mean and total) { .build }
+
+In the two examples I arbitrarily chose a sample size, and allocated the sample size proportionally to each stratum according to its sub-population size.
+
+We need to consider how large the overall sample size *should* be and also how it should actually be allocated to the strata. 
+
+The sample size is determined based on a desired bound $B$. Just like in the case of SRS it comes down to solving this equation for $n$:
+
+$$\begin{align*}
+2\sqrt{\hat V(\bar y_{st})} &= B\\
+\hat V(\bar y_{st}) &= \frac{B^2}{2}
+\end{align*} $$
+
+## the allocation fractions, and solving for n {.build}
+
+The sample size $n$ and the allocation are two peas in a pod. (Love and marriage, horse and carriage, etc.)
+
+The allocation $n = n_1 + \cdots + n_L$ is described by the "allocation fractions" defined as in:
+
+$$a_i = \frac{n_i}{n} \qquad n_i = na_i \qquad 0 < a_i < 1 \qquad a_1 + \cdots + a_L = 1$$
+
+Given these, the sample size required is (approximately):
+
+$$n = \frac{\sum_{i=1}^L N_i^2\sigma_i^2/a_i}{N^2B^2/4 + \sum_{i=1}^L N_i \sigma^2_i}$$
+
+Of course $\sigma^2_i$ have to be guessed from best available knowledge, like before.
+
+## example---transformer age from term test { .build }
+
+Suppose we want to estimate the average transformer age with error bound of 1 year. We're pretty sure the oldest transformers are around 60 years old. If we stick with a proportional allocation, what sample size is required? Recall:
+
+```{r, echo=FALSE}
+kable(N_by_size)
+```
+
+## example---fitting age
+
+Suppose we decide to sample equally from each municipality, and we want to estimate the average fitting age to within 0.5 years. What sample size is required?
+
